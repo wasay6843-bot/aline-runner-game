@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a2e; font-family: 'Courier New', monospace; overflow: hidden; }
+canvas { display: block; }
+#ui { position: absolute; top: 10px; left: 10px; color: #fff; font-size: 14px; z-index: 10; }
+#ui div { margin-bottom: 4px; background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 20px; display: inline-block; }
+#startScreen, #gameOverScreen {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #0a0a2e, #1a0a3e);
+  z-index: 20; color: white; text-align: center;
+}
+#gameOverScreen { display: none; }
+h1 { font-size: 42px; color: #00ffcc; text-shadow: 0 0 20px #00ffcc; margin-bottom: 10px; }
+h2 { font-size: 32px; color: #ff4444; text-shadow: 0 0 20px #ff4444; margin-bottom: 20px; }
+.subtitle { font-size: 16px; color: #aaa; margin-bottom: 30px; }
+.btn {
+  background: linear-gradient(90deg, #00ffcc, #0088ff);
+  border: none; color: #000; font-size: 20px; font-weight: bold;
+  padding: 14px 40px; border-radius: 40px; cursor: pointer;
+  box-shadow: 0 0 20px #00ffcc88; transition: transform 0.1s;
+  font-family: 'Courier New', monospace;
+}
+.btn:hover { transform: scale(1.05); }
+.stats { margin: 20px 0; font-size: 18px; color: #ffdd00; line-height: 2; }
+.alien-emoji { font-size: 60px; animation: bounce 1s infinite; }
+@keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-15px)} }
+</style>
+</head>
+<body>
+<div id="startScreen">
+  <div class="alien-emoji">👾</div>
+  <h1>ALIEN RUNNER</h1>
+  <p class="subtitle">Police se bhaago! Coins collect karo!</p>
+  <p class="subtitle">Space / Click / Touch = Jump</p>
+  <button class="btn" onclick="startGame()">🚀 START GAME</button>
+</div>
+
+<div id="gameOverScreen">
+  <h2>💀 GAME OVER</h2>
+  <div class="stats" id="goStats"></div>
+  <button class="btn" onclick="restartGame()">🔄 RESTART</button>
+</div>
+
+<div id="ui">
+  <div>⭐ Score: <span id="scoreDisplay">0</span></div><br>
+  <div>🏆 Best: <span id="bestDisplay">0</span></div><br>
+  <div>🪙 Coins: <span id="coinDisplay">0</span></div><br>
+  <div>💰 Money: $<span id="moneyDisplay">0</span></div><br>
+  <div>🎯 Level: <span id="levelDisplay">1</span></div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let gameRunning = false;
+let score = 0, bestScore = 0, coins = 0, money = 0, level = 1;
+let gameSpeed = 4;
+let frameCount = 0;
+let particles = [];
+let stars = [];
+
+// Generate stars
+for(let i=0;i<100;i++) stars.push({x:Math.random()*canvas.width, y:Math.random()*canvas.height*0.6, r:Math.random()*2});
+
+const GROUND = canvas.height - 80;
+
+let alien = { x:120, y:GROUND, w:40, h:50, vy:0, jumping:false, frame:0 };
+let police = { x:-100, y:GROUND+10, w:45, h:45, frame:0 };
+let obstacleList = [];
+let coinList = [];
+let roadLines = [];
+for(let i=0;i<10;i++) roadLines.push({x: i*(canvas.width/10), y:GROUND+30});
+
+function startGame() {
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('gameOverScreen').style.display = 'none';
+  gameRunning = true;
+  score=0; coins=0; money=0; level=1; gameSpeed=4;
+  alien.y=GROUND; alien.vy=0; alien.jumping=false;
+  police.x = -100;
+  obstacleList=[]; coinList=[]; particles=[];
+  updateUI();
+  requestAnimationFrame(loop);
+}
+
+function restartGame() { startGame(); }
+
+function jump() {
+  if(!gameRunning) return;
+  if(!alien.jumping) {
+    alien.vy = -16;
+    alien.jumping = true;
+    spawnParticles(alien.x+20, alien.y+50, '#00ffcc', 6);
+  }
+}
+
+document.addEventListener('keydown', e => { if(e.code==='Space'){ e.preventDefault(); jump(); }});
+canvas.addEventListener('click', jump);
+canvas.addEventListener('touchstart', e=>{ e.preventDefault(); jump(); });
+
+function spawnParticles(x,y,color,count) {
+  for(let i=0;i<count;i++) {
+    particles.push({x,y,vx:(Math.random()-0.5)*5,vy:(Math.random()-0.5)*5-2,life:30,color,r:Math.random()*4+2});
+  }
+}
+
+function spawnObstacle() {
+  let h = 30 + Math.random()*40;
+  obstacleList.push({x:canvas.width+20, y:GROUND-h+50, w:25, h:h});
+}
+
+function spawnCoin() {
+  coinList.push({x:canvas.width+20, y:GROUND - 60 - Math.random()*80, r:12, collected:false, angle:0});
+}
+
+function updateUI() {
+  document.getElementById('scoreDisplay').textContent = score;
+  document.getElementById('bestDisplay').textContent = bestScore;
+  document.getElementById('coinDisplay').textContent = coins;
+  document.getElementById('moneyDisplay').textContent = money;
+  document.getElementById('levelDisplay').textContent = level;
+}
+
+function gameOver() {
+  gameRunning = false;
+  if(score > bestScore) bestScore = score;
+  document.getElementById('goStats').innerHTML =
+    `🏆 Highest Score: ${bestScore}<br>🪙 Coins: ${coins}<br>💰 Money: $${money}<br>🎯 Level: ${level}`;
+  document.getElementById('gameOverScreen').style.display = 'flex';
+}
+
+function loop() {
+  if(!gameRunning) return;
+  frameCount++;
+
+  // Level up
+  level = Math.floor(score/500)+1;
+  gameSpeed = 4 + (level-1)*0.8;
+
+  // Spawn
+  if(frameCount % Math.max(60, 100-level*5) === 0) spawnObstacle();
+  if(frameCount % 90 === 0) spawnCoin();
+
+  // Background
+  ctx.fillStyle = '#0a0a2e';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Stars
+  ctx.fillStyle='#ffffff';
+  stars.forEach(s=>{ ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill(); });
+
+  // Ground
+  let grd = ctx.createLinearGradient(0,GROUND,0,canvas.height);
+  grd.addColorStop(0,'#1a3a1a'); grd.addColorStop(1,'#0d1f0d');
+  ctx.fillStyle=grd;
+  ctx.fillRect(0,GROUND,canvas.width,canvas.height-GROUND);
+
+  // Road lines
+  ctx.fillStyle='#ffff00';
+  roadLines.forEach(r=>{
+    r.x -= gameSpeed;
+    if(r.x < -60) r.x = canvas.width+20;
+    ctx.fillRect(r.x, GROUND+20, 40, 5);
+  });
+
+  // Police chasing
+  if(police.x < alien.x - 80) police.x += gameSpeed * 0.6;
+  else if(police.x > alien.x - 80) police.x -= 1;
+
+  // Alien physics
+  alien.vy += 0.8;
+  alien.y += alien.vy;
+  if(alien.y >= GROUND) { alien.y=GROUND; alien.vy=0; alien.jumping=false; }
+
+  // Draw alien 👾
+  alien.frame = Math.floor(frameCount/8)%2;
+  ctx.font = '40px serif';
+  ctx.fillText('👾', alien.x, alien.y+45);
+
+  // Draw police 🚔
+  ctx.font = '38px serif';
+  ctx.fillText('🚔', police.x, police.y+40);
+
+  // Police siren effect
+  if(frameCount%20<10) {
+    ctx.save();
+    ctx.globalAlpha=0.3;
+    ctx.fillStyle='#ff0000';
+    ctx.beginPath(); ctx.arc(police.x+22,police.y-5,15,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Obstacles
+  obstacleList.forEach((o,i)=>{
+    o.x -= gameSpeed;
+    ctx.fillStyle='#ff4444';
+    ctx.beginPath();
+    ctx.moveTo(o.x,o.y+o.h);
+    ctx.lineTo(o.x+o.w/2,o.y);
+    ctx.lineTo(o.x+o.w,o.y+o.h);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#ff8888';
+    ctx.fillRect(o.x+8,o.y,o.w-16,8);
+
+    // Collision
+    if(alien.x+30>o.x+5 && alien.x+10<o.x+o.w-5 && alien.y+50>o.y+5 && alien.y+5<o.y+o.h) {
+      spawnParticles(alien.x+20,alien.y+25,'#ff4444',15);
+      gameOver();
+    }
+    if(o.x < -50) obstacleList.splice(i,1);
+  });
+
+  // Coins
+  coinList.forEach((c,i)=>{
+    if(c.collected) return;
+    c.x -= gameSpeed;
+    c.angle += 0.1;
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(Math.sin(c.angle)*0.3);
+    ctx.font='24px serif';
+    ctx.fillText('🪙', -12, 12);
+    ctx.restore();
+
+    // Collect
+    if(Math.abs(alien.x+20-c.x)<25 && Math.abs(alien.y+25-c.y)<25) {
+      c.collected=true;
+      coins++; money+=10+(level*5);
+      score+=100;
+      spawnParticles(c.x,c.y,'#ffdd00',10);
+      coinList.splice(i,1);
+    }
+    if(c.x < -30) coinList.splice(i,1);
+  });
+
+  // Particles
+  particles.forEach((p,i)=>{
+    p.x+=p.vx; p.y+=p.vy; p.life--;
+    ctx.save(); ctx.globalAlpha=p.life/30;
+    ctx.fillStyle=p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    if(p.life<=0) particles.splice(i,1);
+  });
+
+  // Score
+  score++;
+  updateUI();
+
+  requestAnimationFrame(loop);
+}
+</script>
+</body>
+</html>
